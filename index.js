@@ -55,7 +55,18 @@ const getProperties = (num) => {
     return properties;
 };
 
-// Main route
+app.get('/', (req, res) => {
+    res.json({
+        message: "Welcome to Number Classification API",
+        usage: {
+            endpoint: "/api/classify-number",
+            method: "GET",
+            parameter: "number",
+            example: "/api/classify-number?number=371"
+        }
+    });
+});
+
 app.get('/api/classify-number', async (req, res) => {
     const numberStr = req.query.number;
     
