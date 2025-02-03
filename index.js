@@ -5,6 +5,13 @@ import axios from 'axios';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Add caching for Numbers API responses
+const factCache = new Map();
+
+// Add timeout for external API calls
+const TIMEOUT_MS = 5000;
+axios.defaults.timeout = TIMEOUT_MS;
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -55,6 +62,28 @@ const getProperties = (num) => {
     return properties;
 };
 
+// Optimized number fact fetching with caching and fallback
+async function getNumberFact(number) {
+    try {
+        // Check cache first
+        if (factCache.has(number)) {
+            return factCache.get(number);
+        }
+
+        const response = await axios.get(`http://numbersapi.com/${number}/math`);
+        const fact = response.data;
+        
+        // Cache the result
+        factCache.set(number, fact);
+        
+        return fact;
+    } catch (error) {
+        // Fallback fact if API fails or times out
+        return `${number} is ${isPrime(number) ? 'a prime number' : 'not a prime number'} and ${number % 2 === 0 ? 'is even' : 'is odd'}`;
+    }
+}
+
+// Root route
 app.get('/', (req, res) => {
     res.json({
         message: "Welcome to Number Classification API",
@@ -67,7 +96,14 @@ app.get('/', (req, res) => {
     });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Main route with optimizations
 app.get('/api/classify-number', async (req, res) => {
+    const start = Date.now(); // Track response time
     const numberStr = req.query.number;
     
     // Input validation
@@ -81,26 +117,32 @@ app.get('/api/classify-number', async (req, res) => {
     const number = parseInt(numberStr);
 
     try {
-        // Fetch fun fact from Numbers API
-        const factResponse = await axios.get(`http://numbersapi.com/${number}/math`);
-        const funFact = factResponse.data;
+        // Calculate properties first (synchronous operations)
+        const properties = getProperties(number);
+        const isPrimeNumber = isPrime(number);
+        const isPerfectNumber = isPerfect(number);
+        const digitSum = getDigitSum(number);
+
+        // Then fetch fact (asynchronous operation)
+        const funFact = await getNumberFact(number);
 
         const response = {
             number,
-            is_prime: isPrime(number),
-            is_perfect: isPerfect(number),
-            properties: getProperties(number),
-            digit_sum: getDigitSum(number),
-            fun_fact: funFact
+            is_prime: isPrimeNumber,
+            is_perfect: isPerfectNumber,
+            properties,
+            digit_sum: digitSum,
+            fun_fact: funFact,
+            response_time_ms: Date.now() - start
         };
 
         res.json(response);
     } catch (error) {
-        console.error('Error fetching fun fact:', error);
+        console.error('Error processing request:', error);
         res.status(500).json({
             number: number,
             error: true,
-            message: 'Error fetching number facts'
+            message: 'Error processing request'
         });
     }
 });
